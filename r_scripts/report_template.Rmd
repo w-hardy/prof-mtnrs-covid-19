@@ -1,0 +1,161 @@
+---
+title: "report template"
+author: "Will Hardy"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(lubridate)
+
+knitr::opts_chunk$set(echo = FALSE)
+
+association <- as.name("mem_ami")
+
+survey_data <- 
+  read_rds("../data/prof_mtnrs_covid_19_survey.rds")
+  
+association_data <- survey_data %>% 
+  filter(!!association == TRUE)
+```
+
+# All associations
+
+# Summary of respondants
+
+## By sex
+
+```{r}
+survey_data %>% 
+  group_by(sex) %>% 
+  summarise(n = n(),
+            age = mean(age)) %>% 
+  kable(digits = 1)
+```
+
+
+## By qualification
+
+```{r}
+survey_data %>% 
+  select(starts_with("qual_")) %>% 
+  summarise_all(sum) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(Qualification = as.factor(toupper(str_replace_all(rowname, "qual_", ""))),
+         Count = V1) %>% 
+  ggplot(aes(x = Qualification, y = Count, fill = Qualification)) +
+  geom_col() +
+  guides(fill = FALSE)
+```
+
+
+## By association
+
+```{r}
+survey_data %>% 
+  select(starts_with("mem_")) %>% 
+  summarise_all(sum) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(Association = as.factor(toupper(str_replace_all(rowname, "mem_", ""))),
+         Count = V1) %>% 
+  ggplot(aes(x = Association, y = Count, fill = Association)) +
+  geom_col() +
+  guides(fill = FALSE)
+```
+
+
+## By employment type
+
+```{r}
+survey_data %>% 
+  group_by(`Employment status`) %>% 
+  count() %>% 
+  ggplot(aes(x = `Employment status`, y = n)) +
+  geom_col()
+```
+
+
+# Summary
+
+```{r}
+survey_data %>% 
+  filter(`Employment status` != "Owner") %>% # no persona income recorded
+  group_by(`Employment status`) %>% 
+  summarise(n = n(),
+    `Mean income 18-19` = mean(total_income_18_19, na.rm = TRUE),
+    `Median income 18-19` = median(total_income_18_19, na.rm = TRUE),
+    `Mean expected income 20-21` = mean(total_exp_income, na.rm = TRUE),
+    `Median expected income 20-21` = median(total_exp_income, na.rm = TRUE),
+    `Mean exected loss` = mean(total_exp_losses, na.rm = TRUE),
+    `Median exected loss` = median(total_exp_losses, na.rm = TRUE),) %>% 
+  kable(digits = 0)
+```
+
+
+## Self-employed
+
+```{r self-employed-income-18-19, fig.cap="Distribution of self-employed income for 2018-2019 tax year. Only showing data for those who reported self-employed earnings for 2018-2019", fig.subcap=c("All", association)}
+survey_data %>% 
+  filter(self_income_18_19 > 0) %>% 
+  ggplot(aes(x = self_income_18_19)) +
+  geom_histogram(binwidth = 5000) + 
+  xlab("Income (£)")
+
+association_data %>% 
+  filter(self_income_18_19 > 0) %>% 
+  ggplot(aes(x = self_income_18_19)) +
+  geom_histogram(binwidth = 5000) + 
+  xlab("Income (£)")
+
+```
+
+
+## Employee
+
+```{r}
+survey_data %>% 
+  ggplot(aes(x = sex, y = employee_income_18_19)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 50000))
+```
+
+
+## Total personal
+
+```{r}
+survey_data %>% 
+  ggplot(aes(x = sex, y = total_income_18_19)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 50000))
+```
+
+
+# Expected losses
+
+```{r}
+survey_data %>% 
+  select(ends_with("exp_losses")) %>% 
+  summarise_all(sum, na.rm = TRUE) %>% 
+  kable(caption = "Total expected losses 2018-2019",
+        col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
+
+survey_data %>% 
+  select(ends_with("exp_losses")) %>% 
+  summarise_all(median, na.rm = TRUE) %>% 
+  kable(caption = "Median expected losses 2018-2019",
+        col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
+
+survey_data %>% 
+  filter(alternate_career == FALSE) %>% 
+  select(ends_with("exp_losses")) %>% 
+  summarise_all(median, na.rm = TRUE) %>% 
+  kable(caption = "Median expected losses 2018-2019 for those with no alternate career",
+        col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
+
+```

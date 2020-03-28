@@ -1,0 +1,141 @@
+---
+title: "Financial Impact of COVID-19 on the professional mountaineering community"
+author: "Will Hardy"
+date: "`r Sys.Date()"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(knitr)
+```
+
+
+```{r data}
+survey_data <- read_rds("data/prof_mtnrs_covid_19_survey.rds")
+```
+
+
+# Summary of respondants
+
+## By sex
+
+```{r}
+survey_data %>% 
+  group_by(sex) %>% 
+  summarise(n = n(),
+            age = mean(age)) %>% 
+  kable(digits = 1)
+```
+
+
+## By qualification
+
+```{r}
+survey_data %>% 
+  select(starts_with("qual_")) %>% 
+  summarise_all(sum) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(Qualification = as.factor(toupper(str_replace_all(rowname, "qual_", ""))),
+         Count = V1) %>% 
+  ggplot(aes(x = Qualification, y = Count, fill = Qualification)) +
+  geom_col() +
+  guides(fill = FALSE)
+```
+
+
+## By association
+
+```{r}
+survey_data %>% 
+  select(starts_with("mem_")) %>% 
+  summarise_all(sum) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(Association = as.factor(toupper(str_replace_all(rowname, "mem_", ""))),
+         Count = V1) %>% 
+  ggplot(aes(x = Association, y = Count, fill = Association)) +
+  geom_col() +
+  guides(fill = FALSE)
+```
+
+
+## By employment type
+
+```{r}
+survey_data %>% 
+  mutate(`Employment status` = 
+           case_when(self_employed == TRUE & 
+                       employee == TRUE & 
+                       owner_ltd == TRUE ~ 
+                       "Self-employed, \nemployee & \nowner",
+                     self_employed == TRUE & 
+                       employee == TRUE & 
+                       owner_ltd == FALSE ~ 
+                       "Self-employed & \nemployee",
+                     self_employed == TRUE & 
+                       employee == FALSE & 
+                       owner_ltd == TRUE ~ 
+                       "Self-employed, & \nowner",
+                     self_employed == FALSE & 
+                       employee == TRUE & 
+                       owner_ltd == TRUE ~ 
+                       "Employee & \nowner",
+                     self_employed == TRUE & 
+                       employee == FALSE & 
+                       owner_ltd == FALSE ~ 
+                       "Self-employed",
+                     self_employed == FALSE & 
+                       employee == TRUE & 
+                       owner_ltd == FALSE ~ 
+                       "Employee",
+                     self_employed == FALSE & 
+                       employee == FALSE & 
+                       owner_ltd == TRUE ~ 
+                       "Owner")) %>% 
+  group_by(`Employment status`) %>% 
+  count() %>% 
+  ggplot(aes(x = `Employment status`, y = n)) +
+  geom_col()
+```
+
+
+# What did the industry look like 2018-2019?
+
+## Self-employed
+
+```{r}
+survey_data %>% 
+  filter(self_income_18_19 > 0) %>% 
+    ggplot(aes(x = self_income_18_19)) +
+    geom_histogram(binwidth = 2000)
+```
+
+
+## Employee
+
+```{r}
+survey_data %>% 
+  ggplot(aes(x = sex, y = employee_income_18_19)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 50000))
+```
+
+
+## Total personal
+
+```{r}
+survey_data %>% 
+  ggplot(aes(x = sex, y = total_income_18_19)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 50000))
+```
+
+
+
+
