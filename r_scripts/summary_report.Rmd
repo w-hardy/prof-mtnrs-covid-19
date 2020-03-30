@@ -1,8 +1,14 @@
 ---
-title: "report template"
+title: "Financial impact of COVID-19 on professional mountaineers"
 author: "Will Hardy"
 date: "`r Sys.Date()`"
 output: html_document
+knit: (function(inputFile, encoding) { 
+      out_dir <- '../reports';
+      rmarkdown::render(inputFile,
+                        encoding=encoding, 
+                        output_file=file.path(dirname(inputFile), 
+                        out_dir, "summary_report.html")) })
 ---
 
 ```{r setup, include=FALSE}
@@ -12,18 +18,32 @@ library(lubridate)
 
 knitr::opts_chunk$set(echo = FALSE)
 
-association <- as.name("mem_ami")
-
 survey_data <- 
   read_rds("../data/prof_mtnrs_covid_19_survey.rds")
   
-association_data <- survey_data %>% 
-  filter(!!association == TRUE)
+# data by association
+AMI <- survey_data %>% 
+  filter(mem_ami == TRUE) %>% 
+  mutate(association = "AMI")
+
+BAIML <- survey_data %>% 
+  filter(mem_baiml == TRUE) %>% 
+  mutate(association = "BAIML")
+
+BMG <- survey_data %>% 
+  filter(mem_bmg == TRUE) %>% 
+  mutate(association = "BMG")
+
+MTA <- survey_data %>% 
+  filter(mem_mta == TRUE) %>% 
+  mutate(association = "MTA")
+
+by_association <- bind_rows(AMI, BAIML, BMG, MTA) # cases will not be unique
+
 ```
 
-# All associations
 
-# Summary of respondants
+# Survey respondants
 
 ## By sex
 
@@ -31,7 +51,8 @@ association_data <- survey_data %>%
 survey_data %>% 
   group_by(sex) %>% 
   summarise(n = n(),
-            age = mean(age)) %>% 
+            mean_age = mean(age),
+            sd_age = sd(age)) %>% 
   kable(digits = 1)
 ```
 
@@ -70,6 +91,16 @@ survey_data %>%
 ```
 
 
+```{r association-membership}
+by_association %>% 
+  group_by(association, sex) %>% 
+  summarise(n = n(),
+            age = mean(age)) %>% 
+  kable(caption = "Association demographics", digits = 1) %>% 
+  kableExtra::group_rows(index = 1)
+```
+
+
 ## By employment type
 
 ```{r}
@@ -100,19 +131,12 @@ survey_data %>%
 
 ## Self-employed
 
-```{r self-employed-income-18-19, fig.cap="Distribution of self-employed income for 2018-2019 tax year. Only showing data for those who reported self-employed earnings for 2018-2019", fig.subcap=c("All", association)}
+```{r self-employed-income-18-19, fig.cap="Distribution of self-employed income for 2018-2019 tax year. Only showing data for those who reported self-employed earnings for 2018-2019"}
 survey_data %>% 
   filter(self_income_18_19 > 0) %>% 
   ggplot(aes(x = self_income_18_19)) +
   geom_histogram(binwidth = 5000) + 
   xlab("Income (£)")
-
-association_data %>% 
-  filter(self_income_18_19 > 0) %>% 
-  ggplot(aes(x = self_income_18_19)) +
-  geom_histogram(binwidth = 5000) + 
-  xlab("Income (£)")
-
 ```
 
 
@@ -159,3 +183,19 @@ survey_data %>%
         col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
 
 ```
+
+
+## By association
+
+```{r, warning=FALSE}
+by_association %>% 
+  group_by(association) %>% 
+  summarise(`Mean loss of earnings` = mean(total_exp_losses, na.rm = TRUE),
+            `Mean loss of earnings as % of 18-19 income` = 
+              100*mean(total_exp_losses, na.rm = TRUE)/
+              mean(total_income_18_19, na.rm = TRUE)) %>% 
+  kable(digits = 1, caption = "Loss of earnings by association")
+```
+
+
+

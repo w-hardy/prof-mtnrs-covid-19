@@ -39,6 +39,10 @@ inThousands <- function(x) {
 # reading data from Qualtrics
 raw_survey_data <- read_sav("data/covid-19_27+March+2020_08.36.sav")
 
+raw_survey_data %>% 
+  filter(ResponseId == "R_1LFOvdFPZ1LMOis") %>% 
+  .$Q11_1 * 1000
+
 # preparing data
 survey_data <- 
   raw_survey_data %>% 
@@ -186,7 +190,7 @@ survey_data <-
   filter(start_date > ymd_hms("2020-03-25 17:00:00")) # remove "real" preview cases
 
 
-if (min(psych::describe(survey_data, omit = TRUE)$min, na.rm = TRUE) < 0) {
+if (min(psych::describe(survey_data, omit = FALSE)$min, na.rm = TRUE) < 0) {
   stop("Minimum value less than 0")
 }
 
@@ -197,15 +201,21 @@ survey_data %>%
   filter(self_income_18_19 > 0 & self_income_18_19 < 100) %>% 
   select(response_id, self_income_18_19)
 
-
-
-
+survey_data <- 
+  survey_data %>% 
+  mutate(self_income_18_19 = modify_if(.x = .$self_income_18_19, 
+                                       .p = inThousands, .f = ~ .x *1000),
+         self_exp_income = modify_if(.x = .$self_exp_income, 
+                                     .p = inThousands, .f = ~ .x *1000),
+         self_exp_losses = modify_if(.x = .$self_exp_losses, 
+                                    .p = inThousands, .f = ~ .x *1000),
+         self_expenses_exp = modify_if(.x = .$self_expenses_exp, 
+                                      .p = inThousands, .f = ~ .x *1000),
+  ) 
 
 survey_data %>% 
-  mutate(self_income_18_19 = modify_if(.x = .$self_income_18_19, 
-       .p = inThousands, .f = ~ .x *1000)) %>% 
-  filter(self_income_18_19 > 0 & self_income_18_19 < 100) %>% 
-  select(response_id, self_income_18_19)
+  filter(response_id == "R_1LFOvdFPZ1LMOis") %>% 
+  .$self_income_18_19
 
 # self_income_18_19 typos
 survey_data %>% 
