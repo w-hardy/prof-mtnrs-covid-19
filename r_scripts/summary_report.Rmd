@@ -2,7 +2,7 @@
 title: "Financial impact of COVID-19 on professional mountaineers"
 author: "Will Hardy"
 date: "`r Sys.Date()`"
-output: html_document
+output: bookdown::html_document2
 knit: (function(inputFile, encoding) { 
       out_dir <- '../reports';
       rmarkdown::render(inputFile,
@@ -13,8 +13,9 @@ knit: (function(inputFile, encoding) {
 
 ```{r setup, include=FALSE}
 library(tidyverse)
-library(knitr)
 library(lubridate)
+library(knitr)
+library(kableExtra)
 
 knitr::opts_chunk$set(echo = FALSE)
 
@@ -40,26 +41,38 @@ MTA <- survey_data %>%
 
 by_association <- bind_rows(AMI, BAIML, BMG, MTA) # cases will not be unique
 
+# functions
+
+myTable <- 
+  function(input, caption = "ADD CAPTION", digits = 1, 
+           col.names = NULL, full_width = FALSE){
+    kable(x = input, digits = digits, caption = caption, booktabs = TRUE) %>% 
+      kable_styling(full_width = full_width, bootstrap_options = c("striped", "hover"))
+  }
+
 ```
 
 
-# Survey respondants
+# Survey respondents
 
-## By sex
+## Demographics
 
-```{r}
+```{r survey-respondent-demographics}
 survey_data %>% 
   group_by(sex) %>% 
   summarise(n = n(),
+            median_age = median(age),
             mean_age = mean(age),
             sd_age = sd(age)) %>% 
-  kable(digits = 1)
+  myTable(caption = "Survey respondents demographics.")
 ```
 
 
 ## By qualification
 
-```{r}
+These are not independent observations as a candidate may hold multiple qualifications. It is also possible that some candidates have not reported all of the qualifications that they hold and only reported their "highest" qualification (e.g., a WMCI who has not reported having their ML, there are `r nrow(filter(survey_data, qual_wmci == TRUE & qual_ml == FALSE))` cases where this is true).
+
+```{r, fig.cap="Survey responses per qualification", eval=FALSE}
 survey_data %>% 
   select(starts_with("qual_")) %>% 
   summarise_all(sum) %>% 
@@ -73,10 +86,25 @@ survey_data %>%
   guides(fill = FALSE)
 ```
 
+```{r}
+survey_data %>% 
+  select(starts_with("qual_")) %>% 
+  summarise_all(sum) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(Qualification = as.factor(toupper(str_replace_all(rowname, "qual_", ""))),
+         Count = V1) %>% 
+  select(Qualification, Count) %>% 
+  myTable(caption = "Survey responses per qualification")
+```
+
 
 ## By association
 
-```{r}
+These are not independent observations as a candidate may be a member of multiple associations.
+
+```{r eval=FALSE}
 survey_data %>% 
   select(starts_with("mem_")) %>% 
   summarise_all(sum) %>% 
@@ -95,28 +123,33 @@ survey_data %>%
 by_association %>% 
   group_by(association, sex) %>% 
   summarise(n = n(),
-            age = mean(age)) %>% 
-  kable(caption = "Association demographics", digits = 1) %>% 
-  kableExtra::group_rows(index = 1)
+            median_age = median(age),
+            mean_age = mean(age),
+            sd_age = sd(age)) %>% 
+  myTable(caption = "Association demographics") %>% 
+  collapse_rows(columns = 1, valign = "top")
 ```
 
 
 ## By employment type
 
-```{r}
+Respondents were asked to select each of the employment statuses that applied to them from the following: self-employed/sole trader, owner or shareholder of a limited company, and employee of a company that someone else owns. Table \@ref(tab:employment-type-count) shows the number of respondents who fitted each of the possible combinations of these employment statuses.
+
+```{r employment-type-count}
 survey_data %>% 
   group_by(`Employment status`) %>% 
   count() %>% 
-  ggplot(aes(x = `Employment status`, y = n)) +
-  geom_col()
+  myTable(caption = "Number of responses for each employment status.")
 ```
 
 
 # Summary
 
-```{r}
+This section presents aggreagte statistics for the reponses to the survey. Table \@ref(tab:individiual-finances) presents descriptive statistics for each employment type. It is important to note that the loss of earnings is based on the hypothetical scenario of all work from 14/03/2020 to 14/08/2020 being cancelled. This is important for two main reasons, firstly, the summer period is often busier for professional mountaineers and may account for more than half of their potential "working year." Secondly, it is possible that professional mountaineers may still be able to complete some work (e.g., as technical advisors) or begin working before 14/03/2020.
+
+```{r individual-finances}
 survey_data %>% 
-  filter(`Employment status` != "Owner") %>% # no persona income recorded
+  filter(`Employment status` != "Owner") %>% # no personal income recorded
   group_by(`Employment status`) %>% 
   summarise(n = n(),
     `Mean income 18-19` = mean(total_income_18_19, na.rm = TRUE),
@@ -124,14 +157,20 @@ survey_data %>%
     `Mean expected income 20-21` = mean(total_exp_income, na.rm = TRUE),
     `Median expected income 20-21` = median(total_exp_income, na.rm = TRUE),
     `Mean exected loss` = mean(total_exp_losses, na.rm = TRUE),
-    `Median exected loss` = median(total_exp_losses, na.rm = TRUE),) %>% 
-  kable(digits = 0)
+    `Median exected loss` = median(total_exp_losses, na.rm = TRUE),
+    `Mean loss of earnings as % of 18-19 income` = 
+              100*mean(total_exp_losses, na.rm = TRUE)/
+      mean(total_income_18_19, na.rm = TRUE),
+    `Median loss of earnings as % of 18-19 income` = 
+      100*median(total_exp_losses, na.rm = TRUE)/
+      median(total_income_18_19, na.rm = TRUE)) %>% 
+  myTable(digits = 0)
 ```
 
 
 ## Self-employed
 
-```{r self-employed-income-18-19, fig.cap="Distribution of self-employed income for 2018-2019 tax year. Only showing data for those who reported self-employed earnings for 2018-2019"}
+```{r self-employed-income-18-19, fig.cap="Distribution of self-employed income for 2018-2019 tax year. Only showing data for those who reported self-employed earnings for 2018-2019."}
 survey_data %>% 
   filter(self_income_18_19 > 0) %>% 
   ggplot(aes(x = self_income_18_19)) +
@@ -166,21 +205,21 @@ survey_data %>%
 survey_data %>% 
   select(ends_with("exp_losses")) %>% 
   summarise_all(sum, na.rm = TRUE) %>% 
-  kable(caption = "Total expected losses 2018-2019",
-        col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
+  myTable(caption = "Total expected losses 2018-2019",
+        col.names = c("Self-employed", "Employee", "Business", "Total personal"))
 
 survey_data %>% 
   select(ends_with("exp_losses")) %>% 
   summarise_all(median, na.rm = TRUE) %>% 
-  kable(caption = "Median expected losses 2018-2019",
-        col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
+  myTable(caption = "Median expected losses 2018-2019",
+        col.names = c("Self-employed", "Employee", "Business", "Total personal"))
 
 survey_data %>% 
   filter(alternate_career == FALSE) %>% 
   select(ends_with("exp_losses")) %>% 
   summarise_all(median, na.rm = TRUE) %>% 
-  kable(caption = "Median expected losses 2018-2019 for those with no alternate career",
-        col.names = c("Self-employed", "Employee", "Buisness", "Total personal"))
+  myTable(caption = "Median expected losses 2018-2019 for those with no alternate career",
+        col.names = c("Self-employed", "Employee", "Business", "Total personal"))
 
 ```
 
@@ -194,7 +233,7 @@ by_association %>%
             `Mean loss of earnings as % of 18-19 income` = 
               100*mean(total_exp_losses, na.rm = TRUE)/
               mean(total_income_18_19, na.rm = TRUE)) %>% 
-  kable(digits = 1, caption = "Loss of earnings by association")
+  myTable(caption = "Expected loss of earnings by association")
 ```
 
 

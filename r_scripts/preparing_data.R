@@ -1,6 +1,7 @@
 library(tidyverse)
 library(haven)
 library(lubridate)
+library(DataExplorer)
 
 # functions
 totalSum <- function(a, b) {
@@ -26,7 +27,7 @@ positiveNumber <- function(x) {
   return((x ^ 2) ^ .5)
 }
 
-inThousands <- function(x) {
+inThousands <- function(x) { # data imported from qualtrics parses "," as a decimel, therefore some responses need x 1000
   if (is.na(x)) {
     FALSE
   } else
@@ -191,7 +192,7 @@ if (min(psych::describe(survey_data, omit = FALSE)$min, na.rm = TRUE) < 0) {
 }
 
 
-# manual corrections
+########## manual corrections ##########
 # values enetred in 1000s
 survey_data %>% 
   filter(self_income_18_19 > 0 & self_income_18_19 < 100) %>% 
@@ -207,42 +208,70 @@ survey_data <-
                                     .p = inThousands, .f = ~ .x *1000),
          self_expenses_exp = modify_if(.x = .$self_expenses_exp, 
                                       .p = inThousands, .f = ~ .x *1000),
+         employee_income_18_19 = modify_if(.x = .$employee_income_18_19, 
+                                       .p = inThousands, .f = ~ .x *1000),
+         employee_exp_income = modify_if(.x = .$employee_exp_income, 
+                                     .p = inThousands, .f = ~ .x *1000),
+         employee_exp_losses = modify_if(.x = .$employee_exp_losses, 
+                                     .p = inThousands, .f = ~ .x *1000),
+         employee_expenses_exp = modify_if(.x = .$employee_expenses_exp, 
+                                       .p = inThousands, .f = ~ .x *1000),
   ) 
 
-survey_data %>% 
-  filter(response_id == "R_1LFOvdFPZ1LMOis") %>% 
-  .$self_income_18_19
 
 # self_income_18_19 typos
-survey_data %>% 
-  filter(self_income_18_19 < self_exp_income & self_exp_income_change == "Less than") %>% 
-  select(response_id, self_income_18_19, self_exp_income)
 
+# "," error not caught by inThousands
+survey_data[survey_data$response_id == "R_2dX8qXpM658ghKg", "self_exp_income"] <- 110000
+survey_data[survey_data$response_id == "R_2z78hb2CimGrpvs", "employee_exp_income"] <- 8580 # entered a "," before their response on Qualtrics
+survey_data[survey_data$response_id == "R_3D7y6B1Ne5YiTq3", "employee_exp_income"] <- 12000 # missing 0
+
+# candidates who added an extra "0" to their response
 survey_data[survey_data$response_id == "R_paWW12a8TtIuGIN", "self_income_18_19"] <- 60000 # looks like a typo
 survey_data[survey_data$response_id == "R_1pAJyquZqs0hLRV", "self_income_18_19"] <- 12000 # reported earning 120000 18/19 and to earn more 20/21 @ 14000
 
 
+# wrong answer selected for Q46 | Q55 - the expected income is in the opposite direction to the response selected
+
+survey_data %>% 
+  filter(self_income_18_19 < self_exp_income & 
+           self_exp_income_change == "Less than") %>% 
+  select(response_id, self_income_18_19, self_exp_income, self_exp_income_change_code) %>% 
+  .$response_id -> wrong_self_exp_income_change1
+
+survey_data[survey_data$response_id %in% wrong_self_exp_income_change1, "self_exp_income_change"] <-  "More than"
+survey_data[survey_data$response_id %in% wrong_self_exp_income_change1, "self_exp_income_change_code"] <-  1
+
+survey_data %>% 
+  filter(self_income_18_19 > self_exp_income & 
+           self_exp_income_change == "More than") %>% 
+  select(response_id, self_income_18_19, self_exp_income, self_exp_income_change_code) %>% 
+  .$response_id -> wrong_self_exp_income_change2
+
+survey_data[survey_data$response_id %in% wrong_self_exp_income_change2, "self_exp_income_change"] <-  "Less than"
+survey_data[survey_data$response_id %in% wrong_self_exp_income_change2, "self_exp_income_change_code"] <-  3
+
+
+survey_data %>% 
+  filter(employee_income_18_19 < employee_exp_income & 
+           employee_exp_income_change == "Less than") %>% 
+  select(response_id, employee_income_18_19, employee_exp_income)
+
+survey_data %>% 
+  filter(employee_income_18_19 > employee_exp_income & 
+           employee_exp_income_change == "More than") %>% 
+  select(response_id, employee_income_18_19, employee_exp_income) %>% 
+  .$response_id -> wrong_employee_income_change1
+
+survey_data[survey_data$response_id %in% wrong_employee_income_change1, "employee_exp_income_change"] <-  "Less than"
+survey_data[survey_data$response_id %in% wrong_employee_income_change1, "employee_exp_income_change_code"] <-  3
+
+# not selected lower qualifications
+
+##### write data #####
 write_rds(survey_data, "data/prof_mtnrs_covid_19_survey.rds")
 
 # checks
 psych::describe(survey_data)
 
-DataExplorer::plot_histogram(survey_data)
-
-
-
-survey_data %>% 
-  filter(`Employment status` == "Employee") %>% 
-  select(employee_exp_income_change, ends_with("exp_income")) %>% 
-  View
-
-cases <- 
-  survey_data %>% 
-  filter(`Employment status` == "Employee") %>% 
-  .$response_id
-
-raw_survey_data %>% 
-  filter(ResponseId %in% cases) %>% 
-  select(Q46, Q54_1, Q56_1)
-
-raw_survey_data
+create_report(survey_data, output_dir = "reports", output_file = "data_summary")
