@@ -37,11 +37,7 @@ inThousands <- function(x) {
 }
 
 # reading data from Qualtrics
-raw_survey_data <- read_sav("data/covid-19_27+March+2020_08.36.sav")
-
-raw_survey_data %>% 
-  filter(ResponseId == "R_1LFOvdFPZ1LMOis") %>% 
-  .$Q11_1 * 1000
+raw_survey_data <- read_spss("data/covid-19_29+March+2020_09.42.sav")
 
 # preparing data
 survey_data <- 
