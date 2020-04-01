@@ -6,9 +6,10 @@
 .sav
 .rds
 .Rds
-#.html
+.html
 association_members.csv
 association_data.rds
 r_scripts/summary_report_cache
-#reports/
+reports/
 data/
+r_scripts/*.html
