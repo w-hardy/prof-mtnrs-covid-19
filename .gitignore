@@ -10,5 +10,5 @@
 association_members.csv
 association_data.rds
 r_scripts/summary_report_cache
-reports
-data
+reports/
+data/
