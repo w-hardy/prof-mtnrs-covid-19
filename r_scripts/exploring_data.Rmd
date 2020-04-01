@@ -15,10 +15,14 @@ library(DataExplorer)
 ```
 
 
-```{r data}
+```{r data, warning=FALSE}
 survey_data <- 
   read_rds("../data/prof_mtnrs_covid_19_survey.rds")
-  
+cms_association_data <-
+  read_rds("../data/cms_association_data.rds")
+
+colnames(cms_association_data)  
+
 # data by association
 AMI <- survey_data %>% 
   filter(mem_ami == TRUE) %>% 
@@ -45,14 +49,87 @@ by_association <- bind_rows(AMI, BAIML, BMG, MTA) # cases will not be unique
 ```{r}
 describe(select_if(survey_data, is.numeric)) %>% 
   kable(digits = 2)
-
 ```
 
 
 # Demographics
 
-```{r}
+```{r age-distribution}
+wilcox.test(survey_data$age, cms_association_data$age)
 
+ks.test(survey_data$age, cms_association_data$age)
+
+t.test(survey_data$age, cms_association_data$age)
+
+BayesFactor::ttestBF(survey_data$age, cms_association_data$age)
+
+ggplot() +
+  geom_density(aes(x = age), data = cms_association_data) +
+  geom_density(aes(x = age, colour = "blue"), data = survey_data)
 ```
 
+
+```{r sex-distribution}
+a <- filter(survey_data, sex %in% c("Female", "Male"))
+b <- filter(cms_association_data, sex %in% c("Female", "Male"))
+
+BSDA::z.test(a$sex_id, b$sex_id, 
+             sigma.x = sd(b$sex_id), sigma.y = sd(b$sex_id))
+
+x <- wilcox.test(a$sex_id, sample_n(b, size = nrow(a), replace = TRUE)$sex_id)
+
+
+# prop femal candidates
+nrow(filter(a, sex_id == 1)) / nrow(a)
+nrow(filter(b, sex_id == 1)) / nrow(b)
+
+sexDist <- function(association){
+  mem <- case_when(association == "AMI" ~ "mem_ami",
+                  association == "BAIML" ~ "mem_baiml",
+                  association == "BMG" ~ "mem_bmg",
+                  association == "MTA" ~ "mem_mta")
+  
+  a <- filter(survey_data, sex_id %in% c(1:2) &
+                !!as.name(mem) == TRUE)
+  b <- filter(cms_association_data, sex_id %in% c(1:2) &
+                !!as.name(mem) == TRUE)
+  
+  res <- ks.test(a$sex_id, sample_n(b, size = nrow(a), replace = FALSE)$sex_id)
+  
+  return(res)
+
+}
+
+
+sexDist("AMI")
+sexDist("BAIML")
+sexDist("BMG")
+sexDist("MTA")
+```
+
+
+# Age vs earniings
+
+```{r}
+df <- survey_data %>% 
+  filter(sex_id %in% 1:2 &
+           total_income_18_19 > 0)
+
+m1 <- lm(log(total_income_18_19) ~ age, data = df)
+m2 <- lm(log(total_income_18_19) ~ as.factor(sex), data = df)
+m3 <- lm(log(total_income_18_19) ~ as.factor(sex) + age, data = df)
+m4 <- lm(log(total_income_18_19) ~ as.factor(sex) * age, data = df)
+
+summary(m1)
+summary(m2)
+summary(m3)
+summary(m4)
+
+plot(m4)
+
+survey_data %>% 
+  ggplot(aes(x = as.factor(sex), y = total_income_18_19, 
+             fill = as.factor(`Employment status`))) +
+  geom_boxplot()
+```
 

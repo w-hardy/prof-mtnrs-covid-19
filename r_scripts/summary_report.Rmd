@@ -2,6 +2,9 @@
 title: "Financial impact of COVID-19 on professional mountaineers"
 author: "Will Hardy"
 date: "`r Sys.Date()`"
+bibliography: 
+  - "../../../Dropbox/references/library.bib"
+  - packages.bib
 output: bookdown::html_document2
 knit: (function(inputFile, encoding) { 
       out_dir <- '../reports';
@@ -12,16 +15,22 @@ knit: (function(inputFile, encoding) {
 ---
 
 ```{r setup, include=FALSE}
+set.seed(1956)
 library(tidyverse)
 library(lubridate)
 library(knitr)
 library(kableExtra)
+library(foreach)
+library(doParallel)
 
 knitr::opts_chunk$set(echo = FALSE)
+knitr::write_bib(c(.packages(), 'bookdown', 'knitr', 'rmarkdown'), 'packages.bib')
 
 survey_data <- 
   read_rds("../data/prof_mtnrs_covid_19_survey.rds")
-  
+cms_association_data <-
+  read_rds("../data/cms_association_data.rds")
+
 # data by association
 AMI <- survey_data %>% 
   filter(mem_ami == TRUE) %>% 
@@ -41,21 +50,45 @@ MTA <- survey_data %>%
 
 by_association <- bind_rows(AMI, BAIML, BMG, MTA) # cases will not be unique
 
+number_members <- 
+  tibble(association = c("AMI", "BAIML", "BMG", "MTA"), 
+         count = c(sum(cms_association_data$mem_ami),
+              sum(cms_association_data$mem_baiml), 
+              sum(cms_association_data$mem_bmg), 
+              sum(cms_association_data$mem_mta)), .rows = 4)
+
 # functions
 
 myTable <- 
   function(input, caption = "ADD CAPTION", digits = 1, 
-           col.names = NULL, full_width = FALSE){
-    kable(x = input, digits = digits, caption = caption, booktabs = TRUE) %>% 
-      kable_styling(full_width = full_width, bootstrap_options = c("striped", "hover"))
+           col.names = colnames(input), full_width = FALSE){
+    kable(x = input, digits = digits, caption = caption, booktabs = TRUE,
+          col.names = col.names) %>% 
+      kable_styling(full_width = full_width, 
+                    bootstrap_options = c("striped", "hover"))
   }
+
+medianNA <- function(x) {median(x = x, na.rm = TRUE)}
+meanNA <- function(x){mean(x = x, na.rm = TRUE)}
+sumNA <- function(...){sum(... = ..., na.rm = TRUE)}
 
 ```
 
 
 # Survey respondents
 
+As of 31st March 2020, there were `r nrow(cms_association_data)` association members and `r nrow(survey_data)` complete responses to a survey sent to all associaiton members (i.e., a response rate of `r round(100*nrow(survey_data)/nrow(cms_association_data), 1)`%). 
+
+
 ## Demographics
+
+Due to concerns surrounding confidentiallity, we only asked for limited demographic data (i.e., age and sex). Table \@ref(tab:survey-respondent-demographics) presents a summary of demographic variables for all survey responses, Table \@ref(tab:association-demographics) presents demographic variables for each association, and Table \@ref(tab:employment-status-demographics) presents demographic variables for each unique combination of employment statuses. 
+
+* The proportion of female and male candidates who responded to the survey were not significantly different to the proportion of female and male candidates in the population, nor for any of the individual association populations.
+* The mean age of respondents to the survey was `r round(mean(survey_data$age) - mean(cms_association_data$age), 2)` years greater than the mean age of association members.
+
+
+## Summary
 
 ```{r survey-respondent-demographics}
 survey_data %>% 
@@ -68,9 +101,63 @@ survey_data %>%
 ```
 
 
-## By qualification
+### By association
 
-These are not independent observations as a candidate may hold multiple qualifications. It is also possible that some candidates have not reported all of the qualifications that they hold and only reported their "highest" qualification (e.g., a WMCI who has not reported having their ML, there are `r nrow(filter(survey_data, qual_wmci == TRUE & qual_ml == FALSE))` cases where this is true).
+These are not independent observations as a candidate may be a member of multiple associations.
+
+```{r eval=FALSE}
+survey_data %>% 
+  select(starts_with("mem_")) %>% 
+  summarise_all(sum) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  mutate(Association = as.factor(toupper(str_replace_all(rowname, "mem_", ""))),
+         Count = V1) %>% 
+  ggplot(aes(x = Association, y = Count, fill = Association)) +
+  geom_col() +
+  guides(fill = FALSE)
+```
+
+
+```{r association-demographics}
+by_association %>% 
+  mutate(female = if_else(sex_id == 1, TRUE, FALSE),
+         male = if_else(sex_id == 2, TRUE, FALSE)) %>% 
+  group_by(association) %>% 
+  summarise(n = n(),
+            pct_female = 100 * sum(female)/n(),
+            pct_male = 100 * sum(male)/n(),
+            median_age = median(age),
+            mean_age = mean(age),
+            sd_age = sd(age)) %>% 
+  myTable(caption = "Demographics for each association") %>% 
+  collapse_rows(columns = 1, valign = "top")
+```
+
+
+### By employment type
+
+Respondents were asked to select each of the employment statuses that applied to them from the following: self-employed/sole trader, owner or shareholder of a limited company, and employee of a company that someone else owns.
+
+```{r employment-status-demographics}
+survey_data %>% 
+  mutate(female = if_else(sex_id == 1, TRUE, FALSE),
+         male = if_else(sex_id == 2, TRUE, FALSE)) %>% 
+  group_by(`Employment status`) %>% 
+  summarise(n = n(),
+            pct_female = 100 * sum(female)/n(),
+            pct_male = 100 * sum(male)/n(),
+            median_age = median(age),
+            mean_age = mean(age),
+            sd_age = sd(age)) %>% 
+  myTable(caption = "Demographics for each employment status.")
+```
+
+
+## Qualifications held
+
+These are not independent observations as a candidate may hold multiple qualifications. It is also possible that some candidates have not reported all of the qualifications that they hold and only reported their "highest" qualification (e.g., a WMCI who has not reported having their ML, there are `r nrow(filter(survey_data, qual_wmci == TRUE & qual_ml == FALSE))` cases where this specific example is true).
 
 ```{r, fig.cap="Survey responses per qualification", eval=FALSE}
 survey_data %>% 
@@ -100,54 +187,69 @@ survey_data %>%
 ```
 
 
-## By association
 
-These are not independent observations as a candidate may be a member of multiple associations.
+# Financial impact on individuals
 
-```{r eval=FALSE}
-survey_data %>% 
-  select(starts_with("mem_")) %>% 
-  summarise_all(sum) %>% 
-  t() %>% 
-  as.data.frame() %>% 
-  rownames_to_column() %>% 
-  mutate(Association = as.factor(toupper(str_replace_all(rowname, "mem_", ""))),
-         Count = V1) %>% 
-  ggplot(aes(x = Association, y = Count, fill = Association)) +
-  geom_col() +
-  guides(fill = FALSE)
-```
+Table \@ref(tab:individual-finances-employment-status) presents descriptive statistics for each employment type. It is important to note that the loss of earnings is based on the hypothetical scenario of all work from 14/03/2020 to 14/08/2020 being cancelled. This is important for two main reasons, firstly, the summer period is often busier for professional mountaineers and may account for more than half of their potential "working year." Secondly, it is possible that professional mountaineers may still be able to complete some work (e.g., as technical advisors) or begin working before 14/03/2020.
 
-
-```{r association-membership}
-by_association %>% 
-  group_by(association, sex) %>% 
-  summarise(n = n(),
-            median_age = median(age),
-            mean_age = mean(age),
-            sd_age = sd(age)) %>% 
-  myTable(caption = "Association demographics") %>% 
-  collapse_rows(columns = 1, valign = "top")
-```
-
-
-## By employment type
-
-Respondents were asked to select each of the employment statuses that applied to them from the following: self-employed/sole trader, owner or shareholder of a limited company, and employee of a company that someone else owns. Table \@ref(tab:employment-type-count) shows the number of respondents who fitted each of the possible combinations of these employment statuses.
-
-```{r employment-type-count}
-survey_data %>% 
-  group_by(`Employment status`) %>% 
-  count() %>% 
-  myTable(caption = "Number of responses for each employment status.")
-```
-
-
-# Summary
-
-This section presents aggreagte statistics for the reponses to the survey. Table \@ref(tab:individiual-finances) presents descriptive statistics for each employment type. It is important to note that the loss of earnings is based on the hypothetical scenario of all work from 14/03/2020 to 14/08/2020 being cancelled. This is important for two main reasons, firstly, the summer period is often busier for professional mountaineers and may account for more than half of their potential "working year." Secondly, it is possible that professional mountaineers may still be able to complete some work (e.g., as technical advisors) or begin working before 14/03/2020.
+## Summary 
 
 ```{r individual-finances}
+survey_data %>% 
+  summarise(n = n(),
+     `Mean income 18-19` = mean(total_income_18_19, na.rm = TRUE),
+    `Median income 18-19` = median(total_income_18_19, na.rm = TRUE),
+    `Mean expected income 20-21` = mean(total_exp_income, na.rm = TRUE),
+    `Median expected income 20-21` = median(total_exp_income, na.rm = TRUE),
+    `Mean expected loss` = mean(total_exp_losses, na.rm = TRUE),
+    `Median expected loss` = median(total_exp_losses, na.rm = TRUE),
+    `Mean loss of earnings as % of 18-19 income` = 
+              100*mean(total_exp_losses, na.rm = TRUE)/
+      mean(total_income_18_19, na.rm = TRUE),
+    `Median loss of earnings as % of 18-19 income` = 
+      100*median(total_exp_losses, na.rm = TRUE)/
+      median(total_income_18_19, na.rm = TRUE)) %>% 
+  myTable(caption = "Individual finances", digits = 0, 
+          col.names = c("n", rep(c("Mean", "Median"),4))) %>% 
+  add_header_above(header = 
+                     c(" " = 1, "Income 2018-2019 (£)" = 2, 
+                       "Expected income 2020-2021 (£)" = 2,
+                       "Expected loss (£)" = 2, 
+                       "Loss of earnings as % of 18-19 income" = 2))
+```
+
+
+## By association
+
+```{r individual-finances-association}
+by_association %>% 
+  group_by(association) %>% 
+  summarise(n = n(),
+     `Mean income 18-19` = mean(total_income_18_19, na.rm = TRUE),
+    `Median income 18-19` = median(total_income_18_19, na.rm = TRUE),
+    `Mean expected income 20-21` = mean(total_exp_income, na.rm = TRUE),
+    `Median expected income 20-21` = median(total_exp_income, na.rm = TRUE),
+    `Mean expected loss` = mean(total_exp_losses, na.rm = TRUE),
+    `Median expected loss` = median(total_exp_losses, na.rm = TRUE),
+    `Mean loss of earnings as % of 18-19 income` = 
+              100*mean(total_exp_losses, na.rm = TRUE)/
+      mean(total_income_18_19, na.rm = TRUE),
+    `Median loss of earnings as % of 18-19 income` = 
+      100*median(total_exp_losses, na.rm = TRUE)/
+      median(total_income_18_19, na.rm = TRUE)) %>% 
+  myTable(caption = "Individual finances by association", digits = 0, 
+          col.names = c("Association", "n", rep(c("Mean", "Median"),4))) %>% 
+  add_header_above(header = 
+                     c(" " = 2, "Income 2018-2019 (£)" = 2, 
+                       "Expected income 2020-2021 (£)" = 2,
+                       "Expected loss (£)" = 2, 
+                       "Loss of earnings as % of 18-19 income" = 2))
+```
+
+
+## By employment status
+
+```{r individual-finances-employment-status}
 survey_data %>% 
   filter(`Employment status` != "Owner") %>% # no personal income recorded
   group_by(`Employment status`) %>% 
@@ -156,85 +258,293 @@ survey_data %>%
     `Median income 18-19` = median(total_income_18_19, na.rm = TRUE),
     `Mean expected income 20-21` = mean(total_exp_income, na.rm = TRUE),
     `Median expected income 20-21` = median(total_exp_income, na.rm = TRUE),
-    `Mean exected loss` = mean(total_exp_losses, na.rm = TRUE),
-    `Median exected loss` = median(total_exp_losses, na.rm = TRUE),
+    `Mean expected loss` = mean(total_exp_losses, na.rm = TRUE),
+    `Median expected loss` = median(total_exp_losses, na.rm = TRUE),
     `Mean loss of earnings as % of 18-19 income` = 
               100*mean(total_exp_losses, na.rm = TRUE)/
       mean(total_income_18_19, na.rm = TRUE),
     `Median loss of earnings as % of 18-19 income` = 
       100*median(total_exp_losses, na.rm = TRUE)/
-      median(total_income_18_19, na.rm = TRUE)) %>% 
-  myTable(digits = 0)
+      median(total_income_18_19, na.rm = TRUE),
+    alternate_career = 
+      100 * mean(case_when(self_alt_career_support_code == 1 ~ 1,
+                           employee_alt_career_support_code == 1 ~ 1,
+                           self_alt_career_support_code %in% c(2:3) ~ 0,
+                           employee_alt_career_support_code %in% c(2:3) ~ 0,
+                           is.na(self_alt_career_support_code) ~ 0,
+                           is.na(employee_alt_career_support_code) ~ 0))) %>% 
+  myTable(caption = "Individual finances by employment status", digits = 0, 
+          col.names = c("Association", "n", rep(c("Mean", "Median"),4), 
+                        "Have an alternate career \nthat will support them")) %>% 
+  add_header_above(header = 
+                     c(" " = 2, "Income 2018-2019 (£)" = 2, 
+                       "Expected income 2020-2021 (£)" = 2,
+                       "Expected loss (£)" = 2, 
+                       "Loss of earnings as % of 18-19 income" = 2,
+                       "%" = 1))
 ```
 
 
-## Self-employed
 
-```{r self-employed-income-18-19, fig.cap="Distribution of self-employed income for 2018-2019 tax year. Only showing data for those who reported self-employed earnings for 2018-2019."}
-survey_data %>% 
-  filter(self_income_18_19 > 0) %>% 
-  ggplot(aes(x = self_income_18_19)) +
-  geom_histogram(binwidth = 5000) + 
-  xlab("Income (£)")
+
+# Estimated total financial impact
+
+There are two important considerations for estimating the population totals. Firstly, the representativeness of the sample data and secondly, the distributions of the data. Association membership is not mutually exclusive, thus there are `r 2^4` possible unique combinations, in the survey data there are `r length(unique(survey_data$member_of))` combinations represented. All combinations in the population are represented, however, some combinations are overrepresented in the survey sample, whilst others are under represented. 
+
+Table \@ref(tab:total-estimates) presents three estimates for several population statistics. A simple estimation of the population statistics can be obtained by multiplying the sample mean by the population size ("Unweighted means"). A slightly more sophisticated estimation can be made by weighting the mean for each association membership group by the proportion of the population that belong to it ("Weighted means"), however, this still does not account for any non-normality in the data. The final method, and our preffered, was using Monte Carlo simulations^[see https://en.wikipedia.org/wiki/Monte_Carlo_method for details [ @Wikipedia2020].]; for each association membership group we simulated 10000 population data sets by resampling the survey data.
+
+
+```{r total-estimates, cache=TRUE}
+unweightedEst <- function(x){
+  mean(x, na.rm = TRUE) * nrow(cms_association_data)
+}
+unweighted_totals <- 
+  survey_data %>% 
+  summarise(`Income 18-19` = unweightedEst(total_income_18_19),
+            `Loss of income` = unweightedEst(total_exp_losses),
+            `Expenses` = unweightedEst(total_exp_expenses)) %>% 
+  mutate(`Estimation method` = "Unweighted means", 
+         `Loss of income as % of 18-19 income` = 100 * `Loss of income` / 
+           `Income 18-19`)
+
+##### Proportional weighting #####
+# How are the combinations of membership distribuited through the population?
+df1 <- cms_association_data %>% 
+  mutate(member_of = paste0(mem_ami, mem_baiml, mem_bmg, mem_mta)) %>% 
+  group_by(member_of) %>% 
+  summarise(pop_n = n(),
+            popn_prop = n()/nrow(cms_association_data))
+
+# What are the means in the survey data?
+df2 <- survey_data %>% 
+  mutate(member_of = paste0(mem_ami, mem_baiml, mem_bmg, mem_mta)) %>% 
+  group_by(member_of) %>% 
+  summarise(resp_prop = n()/nrow(survey_data),
+            `Mean income 18-19` = meanNA(total_income_18_19),
+            `Mean loss of income` = meanNA(total_exp_losses),
+            `Mean expenses` = meanNA(total_exp_expenses),
+            `Mean loss of income as % of 18-19 income` = 
+              100 * mean(total_exp_losses, na.rm = TRUE)/
+              mean(total_income_18_19, na.rm = TRUE))
+
+df3 <- full_join(df1, df2, by = "member_of")
+
+# Weight the means of the survey data by the population proportion and then 
+#   multiply by the number of candidates in the population in that group. 
+popn_weighted_totals <- 
+  df3 %>% 
+  transmute(`income 18-19` = 
+              popn_prop * pop_n * `Mean income 18-19`,
+            `loss of income` = 
+              popn_prop * pop_n * `Mean loss of income`,
+            expenses = popn_prop * pop_n * `Mean expenses`,
+            `Loss of income as % of 18-19 income` = 
+              100 * `loss of income` / `income 18-19`) %>% 
+  summarise(`Income 18-19` = sumNA(`income 18-19`),
+            `Loss of income` = sumNA(`loss of income`),
+            `Expenses` = sumNA(expenses)) %>%
+  mutate(`Estimation method` = "Weighted means",
+    `Loss of income as % of 18-19 income` = 
+      100 * `Loss of income` / `Income 18-19`) 
+
+##### Monte Carlo estimation ##### 
+# Simulation of population distribution using Monte Carlo methods to estimate
+#   the total sums for each possible combination of assocation membership.
+
+#setup parallel backend to use many processors
+cores=detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+registerDoParallel(cl)
+
+association_res <- NULL
+res <- NULL
+datalist <- list()
+
+for (i in unique(survey_data$member_of)) {
+  df1 <- filter(survey_data, member_of == i)
+  df2 <- filter(cms_association_data, member_of == i)
+  
+  finalMatrix <- foreach(j=1:10000, .combine=rbind, .packages = c("dplyr")) %dopar% {
+
+    `income 18-19` = sum(sample(df1$total_income_18_19, size = nrow(df2),
+                                    replace = TRUE), na.rm = TRUE)
+    `loss of income` = sum(sample(df1$total_exp_losses, size = nrow(df2),
+                                      replace = TRUE), na.rm = TRUE)
+    Expenses = sum(sample(df1$total_exp_expenses, size = nrow(df2),
+                              replace = TRUE), na.rm = TRUE)
+    
+    tempMatrix <- tibble(i, j, `income 18-19`, `loss of income`,Expenses)
+    
+    tempMatrix #Equivalent to finalMatrix = rbind(finalMatrix, tempMatrix)
+  }
+  
+  
+  res <- bind_rows(res, bind_rows(finalMatrix))
+  
+}
+#stop cluster
+stopCluster(cl)
+
+monte_carlo_totals <- 
+  res %>% 
+  select(-j) %>% 
+  group_by(i) %>% 
+  summarise_all(meanNA) %>% 
+  summarise(`Income 18-19` = sumNA(`income 18-19`),
+            `Loss of income` = sumNA(`loss of income`),
+            `Expenses` = sumNA(`Expenses`)) %>%
+  mutate(`Estimation method` = "Monte Carlo simulation",
+         `Loss of income as % of 18-19 income` = 
+           100 * `Loss of income` / `Income 18-19`) 
+
+rm(res, datalist, df1, df2)
+
+##### create table #####
+bind_rows(unweighted_totals, popn_weighted_totals, monte_carlo_totals) %>% 
+  select(`Estimation method`, everything()) %>%
+  mutate(`Income 18-19` = `Income 18-19` / 1e6,
+         `Loss of income` = `Loss of income` / 1e6, 
+         `Expenses` = `Expenses` / 1e6) %>% 
+  myTable(caption = "Estimated totals") %>% 
+  add_header_above(header = c(" ", "£ million" = 3, " "))
+
 ```
 
 
-## Employee
+```{r, eval = FALSE}
+# non-parallel
+association_res <- NULL
+res <- NULL
+datalist <- list()
+for (i in unique(survey_data$member_of)) {
+  df1 <- filter(survey_data, member_of == i)
+  df2 <- filter(cms_association_data, member_of == i)
+  
+  for (j in 1:10000) { # creates 10,000 distributions and calculate the sum for each
+    `earnings 18-19` = sumNA(sample(df1$total_income_18_19, size = nrow(df2),
+                                  replace = TRUE))
+    `loss of earnings` = sumNA(sample(df1$total_exp_losses, size = nrow(df2),
+                                    replace = TRUE))
+    `expenses` = sumNA(sample(df1$total_exp_expenses, size = nrow(df2),
+                            replace = TRUE))
+    
+    association_res <- tibble(i, j, `earnings 18-19`, `loss of earnings`,`expenses`)
+    datalist[[j]] <- association_res
+  }
+  
+  res <- bind_rows(res, bind_rows(datalist))
+  
+}
 
-```{r}
-survey_data %>% 
-  ggplot(aes(x = sex, y = employee_income_18_19)) +
-  geom_boxplot() +
-  coord_cartesian(ylim = c(0, 50000))
-```
+##### parallell #####
+#setup parallel backend to use many processors
+cores=detectCores()
+cl <- makeCluster(cores[1]-1) #not to overload your computer
+registerDoParallel(cl)
 
+association_res <- NULL
+res <- NULL
+datalist <- list()
 
-## Total personal
-
-```{r}
-survey_data %>% 
-  ggplot(aes(x = sex, y = total_income_18_19)) +
-  geom_boxplot() +
-  coord_cartesian(ylim = c(0, 50000))
-```
-
-
-# Expected losses
-
-```{r}
-survey_data %>% 
-  select(ends_with("exp_losses")) %>% 
-  summarise_all(sum, na.rm = TRUE) %>% 
-  myTable(caption = "Total expected losses 2018-2019",
-        col.names = c("Self-employed", "Employee", "Business", "Total personal"))
-
-survey_data %>% 
-  select(ends_with("exp_losses")) %>% 
-  summarise_all(median, na.rm = TRUE) %>% 
-  myTable(caption = "Median expected losses 2018-2019",
-        col.names = c("Self-employed", "Employee", "Business", "Total personal"))
-
-survey_data %>% 
-  filter(alternate_career == FALSE) %>% 
-  select(ends_with("exp_losses")) %>% 
-  summarise_all(median, na.rm = TRUE) %>% 
-  myTable(caption = "Median expected losses 2018-2019 for those with no alternate career",
-        col.names = c("Self-employed", "Employee", "Business", "Total personal"))
+for (i in unique(survey_data$member_of)) {
+  df1 <- filter(survey_data, member_of == i)
+  df2 <- filter(cms_association_data, member_of == i)
+  
+  finalMatrix <- foreach(j=1:10000, .combine=rbind, .packages = c("dplyr")) %dopar% {
+    
+    `earnings 18-19` = sumNA(sample(df1$total_income_18_19, size = nrow(df2),
+                                    replace = TRUE))
+    `loss of earnings` = sumNA(sample(df1$total_exp_losses, size = nrow(df2),
+                                      replace = TRUE))
+    `expenses` = sumNA(sample(df1$total_exp_expenses, size = nrow(df2),
+                              replace = TRUE))
+    
+    tempMatrix <- tibble(i, j, `earnings 18-19`, `loss of earnings`,`expenses`)
+    
+    tempMatrix #Equivalent to finalMatrix = rbind(finalMatrix, tempMatrix)
+  }
+  
+  
+  res <- bind_rows(res, bind_rows(finalMatrix))
+  
+}
+#stop cluster
+stopCluster(cl)
 
 ```
 
 
 ## By association
 
-```{r, warning=FALSE}
+```{r individual-losses-by-association}
 by_association %>% 
   group_by(association) %>% 
   summarise(`Mean loss of earnings` = mean(total_exp_losses, na.rm = TRUE),
             `Mean loss of earnings as % of 18-19 income` = 
               100*mean(total_exp_losses, na.rm = TRUE)/
               mean(total_income_18_19, na.rm = TRUE)) %>% 
-  myTable(caption = "Expected loss of earnings by association")
+  myTable(caption = "Estimated individual expected loss of earnings by association (£)")
 ```
 
 
+```{r, eval=FALSE}
+survey_data %>% 
+  mutate(member_of = 
+           interaction(mem_ami, mem_baiml, mem_bmg, mem_mta, 
+                       lex.order = TRUE)) %>% 
+  group_by(member_of) %>% 
+  summarise(n = n(),
+            `Mean loss of earnings` = mean(total_exp_losses, na.rm = TRUE),
+            `Mean loss of earnings as % of 18-19 income` = 
+              100*mean(total_exp_losses, na.rm = TRUE)/
+              mean(total_income_18_19, na.rm = TRUE)) %>% 
+  myTable()
 
+
+individual_losses_by_association <- 
+  by_association %>% 
+  group_by(association) %>% 
+  summarise(`Mean loss of earnings` = mean(total_exp_losses, na.rm = TRUE),
+            `Mean loss of earnings as % of 18-19 income` = 
+              100*mean(total_exp_losses, na.rm = TRUE)/
+              mean(total_income_18_19, na.rm = TRUE)) 
+
+individual_losses_by_association %>% 
+  myTable(caption = "Estimated total expected loss of earnings by association")
+
+individual_losses_by_association %>% 
+  left_join(number_members, by = "association") %>% 
+  transmute(association = association,
+            total_loss = `Mean loss of earnings` * count)
+
+```
+
+
+# Day rates
+
+Professional mountaineers will work with a variety of clients and for a variety of employers; the rates of pay they receive for a days work will vary accordingly. In the survey we asked respondents to estimate their average daily rate when working with their highest qualification both privately and as an employee, we also asked them to provide us with the lowest daily rate they would be willing to work for as an employee.
+
+**These data are potentially sensitive as they could be used to leverage the market/exploit individual workers.**
+
+```{r daily-rates}
+by_association %>% 
+  select(association, ends_with("daily_rate")) %>% 
+  group_by(association) %>% 
+  summarise_all(medianNA) %>% 
+  myTable(caption = "Summary of daily rates by association", 
+          col.names = c("Association", "Private", "Employee", "Lowest"))
+```
+
+
+# References {-}
+
+```{r create_r-references}
+papaja::r_refs(file = "r-references.bib")
+```
+
+\begingroup
+\setlength{\parindent}{-0.5in}
+\setlength{\leftskip}{0.5in}
+
+<div id = "refs"></div>
+\endgroup
