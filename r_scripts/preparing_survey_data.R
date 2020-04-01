@@ -1,3 +1,5 @@
+set.seed(1956)
+
 library(tidyverse)
 library(haven)
 library(lubridate)
@@ -38,11 +40,12 @@ inThousands <- function(x) { # data imported from qualtrics parses "," as a deci
 }
 
 # reading data from Qualtrics
-raw_survey_data <- read_spss("data/covid-19_29+March+2020_09.42.sav")
+raw_survey_data <- read_sav("data/covid-19_1+April+2020_09.50.sav")
 
 # preparing data
 survey_data <- 
   raw_survey_data %>% 
+  filter(Progress == 100) %>% 
   transmute(start_date = ymd_hms(StartDate),
             end_date = ymd_hms(EndDate),
             ip_address = IPAddress,
@@ -86,6 +89,7 @@ survey_data <-
               if_else(Q7_3 == 1, true = TRUE, false = FALSE, missing = FALSE ),
             mem_baiml = 
               if_else(Q7_4 == 1, true = TRUE, false = FALSE, missing = FALSE ),
+            member_of = paste0(mem_ami, mem_baiml, mem_bmg, mem_mta),
             self_employed = 
               if_else(Q47_1 == 1, true = TRUE, false = FALSE, missing = FALSE ),
             owner_ltd = 
@@ -171,25 +175,23 @@ survey_data <-
             
             private_daily_rate = Q28_1,
             employee_daily_rate = Q29_1,
-            lowest_daily_rate = Q30_1,
-            
-            total_income_18_19 = 
-              totalSum(self_income_18_19, employee_income_18_19),
-            total_exp_income =
-              totalSum(self_exp_income, employee_exp_income),
-            total_exp_losses = 
-              totalSum(self_exp_losses, employee_exp_losses),
-            total_exp_expenses = 
-              totalSum(self_expenses_exp, employee_expenses_exp),
-            alternate_career = 
-              if_else(self_alt_career == TRUE | employee_alt_career == TRUE, 
-                      true = TRUE, false = FALSE)) %>% 
-  filter(start_date > ymd_hms("2020-03-25 17:00:00")) # remove "real" preview cases
-
-
-if (min(psych::describe(survey_data, omit = FALSE)$min, na.rm = TRUE) < 0) {
-  stop("Minimum value less than 0")
-}
+            lowest_daily_rate = Q30_1) %>% 
+  mutate(self_income_18_19 = modify_if(.x = .$self_income_18_19, 
+                                       .p = inThousands, .f = ~ .x *1000),
+         self_exp_income = modify_if(.x = .$self_exp_income, 
+                                     .p = inThousands, .f = ~ .x *1000),
+         self_exp_losses = modify_if(.x = .$self_exp_losses, 
+                                     .p = inThousands, .f = ~ .x *1000),
+         self_expenses_exp = modify_if(.x = .$self_expenses_exp, 
+                                       .p = inThousands, .f = ~ .x *1000),
+         employee_income_18_19 = modify_if(.x = .$employee_income_18_19, 
+                                              .p = inThousands, .f = ~ .x *1000),
+            employee_exp_income = modify_if(.x = .$employee_exp_income, 
+                                            .p = inThousands, .f = ~ .x *1000),
+            employee_exp_losses = modify_if(.x = .$employee_exp_losses, 
+                                            .p = inThousands, .f = ~ .x *1000),
+            employee_expenses_exp = modify_if(.x = .$employee_expenses_exp, 
+                                              .p = inThousands, .f = ~ .x *1000))
 
 
 ########## manual corrections ##########
@@ -197,26 +199,6 @@ if (min(psych::describe(survey_data, omit = FALSE)$min, na.rm = TRUE) < 0) {
 survey_data %>% 
   filter(self_income_18_19 > 0 & self_income_18_19 < 100) %>% 
   select(response_id, self_income_18_19)
-
-survey_data <- 
-  survey_data %>% 
-  mutate(self_income_18_19 = modify_if(.x = .$self_income_18_19, 
-                                       .p = inThousands, .f = ~ .x *1000),
-         self_exp_income = modify_if(.x = .$self_exp_income, 
-                                     .p = inThousands, .f = ~ .x *1000),
-         self_exp_losses = modify_if(.x = .$self_exp_losses, 
-                                    .p = inThousands, .f = ~ .x *1000),
-         self_expenses_exp = modify_if(.x = .$self_expenses_exp, 
-                                      .p = inThousands, .f = ~ .x *1000),
-         employee_income_18_19 = modify_if(.x = .$employee_income_18_19, 
-                                       .p = inThousands, .f = ~ .x *1000),
-         employee_exp_income = modify_if(.x = .$employee_exp_income, 
-                                     .p = inThousands, .f = ~ .x *1000),
-         employee_exp_losses = modify_if(.x = .$employee_exp_losses, 
-                                     .p = inThousands, .f = ~ .x *1000),
-         employee_expenses_exp = modify_if(.x = .$employee_expenses_exp, 
-                                       .p = inThousands, .f = ~ .x *1000),
-  ) 
 
 
 # self_income_18_19 typos
@@ -229,6 +211,7 @@ survey_data[survey_data$response_id == "R_3D7y6B1Ne5YiTq3", "employee_exp_income
 # candidates who added an extra "0" to their response
 survey_data[survey_data$response_id == "R_paWW12a8TtIuGIN", "self_income_18_19"] <- 60000 # looks like a typo
 survey_data[survey_data$response_id == "R_1pAJyquZqs0hLRV", "self_income_18_19"] <- 12000 # reported earning 120000 18/19 and to earn more 20/21 @ 14000
+survey_data[survey_data$response_id == "R_1i4AvFuzjnsJf7l", "self_income_18_19"] <- 28000 # reported earning 280000 18/19 and to loose 17000
 
 
 # wrong answer selected for Q46 | Q55 - the expected income is in the opposite direction to the response selected
@@ -265,6 +248,30 @@ survey_data %>%
 
 survey_data[survey_data$response_id %in% wrong_employee_income_change1, "employee_exp_income_change"] <-  "Less than"
 survey_data[survey_data$response_id %in% wrong_employee_income_change1, "employee_exp_income_change_code"] <-  3
+
+
+##### calculating totals #####
+
+survey_data <- 
+  survey_data %>% 
+  mutate(total_income_18_19 = 
+           totalSum(self_income_18_19, employee_income_18_19),
+         total_exp_income =
+           totalSum(self_exp_income, employee_exp_income),
+         total_exp_losses = 
+           totalSum(self_exp_losses, employee_exp_losses),
+         total_exp_expenses = 
+           totalSum(self_expenses_exp, employee_expenses_exp),
+         alternate_career = 
+           if_else(self_alt_career == TRUE | employee_alt_career == TRUE, 
+                   true = TRUE, false = FALSE)) %>% 
+  filter(start_date > ymd_hms("2020-03-25 17:00:00")) # remove "real" preview cases
+
+
+if (min(psych::describe(survey_data, omit = FALSE)$min, na.rm = TRUE) < 0) {
+  stop("Minimum value less than 0")
+}
+
 
 # not selected lower qualifications
 

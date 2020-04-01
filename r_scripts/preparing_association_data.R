@@ -1,29 +1,41 @@
-library(tidyverse)
+set.seed(1956)
 
-association_data <- 
+library(tidyverse)
+library(lubridate)
+
+cms_association_data <- 
   read_csv("data/association_members.csv")
 
-association_data <- 
-  association_data %>% 
-  mutate(mem_mta = 
+cms_association_data <- 
+  cms_association_data %>% 
+  mutate(unique_id = 
+           as.numeric(as.factor(as.numeric(interaction(candidate_id, dob, drop = TRUE)))),
+         country_gb = if_else(country == "GB", TRUE, FALSE),
+         sex = case_when(gender == "Female" ~ "Female",
+                         gender == "Male" ~ "Male"),
+         sex_id = case_when(gender == "Female" ~ 1,
+                            gender == "Male" ~ 2),
+         mem_mta = 
            if_else(str_detect(`member of`,"Mountain Training Association"), TRUE, FALSE),
          mem_ami =
            if_else(str_detect(`member of`,"AMI"), TRUE, FALSE),
          mem_baiml =
            if_else(str_detect(`member of`,"BAIML"), TRUE, FALSE),
          mem_bmg = 
-           if_else(str_detect(`member of`,"BMG"), TRUE, FALSE))
-
-association_data <- 
-  transform(association_data, 
-            unique_id = as.numeric(as.factor(as.numeric(interaction(candidate_id, dob))))) %>% 
-  select(-candidate_id, unique_id, everything())
-
+           if_else(str_detect(`member of`,"BMG"), TRUE, FALSE),
+         member_of = paste0(mem_ami, mem_baiml, mem_bmg, mem_mta),
+         age = interval(dmy(dob), ymd(20200331))/years(1)) %>% # candidate age at the end of the survey window
+  select(unique_id, everything()) %>% 
+  select(-c(candidate_id, dob, gender, `member of`))
 
 # check unique ids are unique
 
-table(association_data$unique_id)
+table(cms_association_data$unique_id) %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  .$Freq %>% 
+  max()
 
 # write data
 
-write_rds(association_data, "data/association_data.rds")
+write_rds(cms_association_data, "data/cms_association_data.rds")
