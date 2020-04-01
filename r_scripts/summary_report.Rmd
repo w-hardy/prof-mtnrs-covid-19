@@ -72,8 +72,16 @@ medianNA <- function(x) {median(x = x, na.rm = TRUE)}
 meanNA <- function(x){mean(x = x, na.rm = TRUE)}
 sumNA <- function(...){sum(... = ..., na.rm = TRUE)}
 
+
+papaja::r_refs(file = "r-references.bib")
+my_citations <- papaja::cite_r(file = "r-references.bib")
+
 ```
 
+
+# Methods
+
+All analyses were conducted using `r my_citations`. Analysis scripts can be accessed at https://github.com/w-hardy/prof-mtnrs-covid-19/tree/master/r_scripts.
 
 # Survey respondents
 
@@ -537,10 +545,6 @@ by_association %>%
 
 
 # References {-}
-
-```{r create_r-references}
-papaja::r_refs(file = "r-references.bib")
-```
 
 \begingroup
 \setlength{\parindent}{-0.5in}
