@@ -2,10 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
-*.csv
-*.sav
-*.rds
-*.html
+.csv
+.sav
+.rds
+.Rds
+.html
 association_members.csv
 association_data.rds
 r_scripts/summary_report_cache
